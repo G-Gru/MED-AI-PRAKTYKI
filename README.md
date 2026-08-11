@@ -16,7 +16,7 @@ ftp://ftp.ebi.ac.uk/biostudies/fire/S-BIAD/110/S-BIAD2110/Files/SELMA3D2026_trai
 
 folder powinien być o strukturze:
 
-
+```
 data
   |- SELMA3D-training-annotated
       |
@@ -27,3 +27,4 @@ data
       |- isolated_structures
          |- gt
          |- raw
+```
