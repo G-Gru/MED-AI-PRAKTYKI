@@ -6,7 +6,7 @@ biblioteki dla macos w requirements-mac.txt
 biblioteki dla linux w requirements-lin.txt
 
 
-utwórz folder data i pobierz do niego pliki z linków:
+W folderze SELMA3D utwórz folder data i pobierz do niego pliki z linków:
 
 ftp://ftp.ebi.ac.uk/biostudies/fire/S-BIAD/106/S-BIAD2106/Files/SELMA3D2026_training_annotated/
 
@@ -17,6 +17,8 @@ ftp://ftp.ebi.ac.uk/biostudies/fire/S-BIAD/110/S-BIAD2110/Files/SELMA3D2026_trai
 folder powinien być o strukturze:
 
 ```
+SELMA3D
+  |
 data
   |- SELMA3D-training-annotated
       |
