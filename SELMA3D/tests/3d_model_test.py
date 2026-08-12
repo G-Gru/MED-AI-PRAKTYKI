@@ -21,7 +21,7 @@ from monai.inferers import sliding_window_inference
 # ==========================================
 # 1. KONFIGURACJA
 # ==========================================
-MODEL_PATH = "../models/best_metric_model.pth"
+MODEL_PATH = "../trained_models/best_metric_model.pth"
 HARDCODED_IMAGE_PATH = "../data/SELMA3D2026_training_annotated/contiguous_structures/raw/blood_vessel_patchvolume_005.mha"
 OUTPUT_DIR = "../results"
 CROP_SIZE = 96
