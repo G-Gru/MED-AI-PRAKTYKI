@@ -132,7 +132,7 @@ def main():
         features=(32, 32, 64, 128, 256, 32)
     ).to(device)
 
-    model_path = "best_metric_model.pth"
+    model_path = "../trained_models/best_metric_model.pth"
     if os.path.exists(model_path):
         state_dict = torch.load(model_path, map_location=device)
         model.load_state_dict(state_dict)
@@ -214,7 +214,7 @@ def main():
                 if metric > best_metric:
                     best_metric = metric
                     best_metric_epoch = epoch + 1
-                    torch.save(model.state_dict(), "best_metric_model.pth")
+                    torch.save(model.state_dict(), "../trained_models/best_metric_model.pth")
                     print("Zapisano nowy najlepszy model.")
 
                 print(

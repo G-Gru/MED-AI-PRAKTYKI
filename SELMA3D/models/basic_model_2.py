@@ -171,7 +171,7 @@ model = UNet(
     dropout=0.2
 ).to(device)
 
-model_path = "best_metric_model_unet_bigger.pth"
+model_path = "../trained_models/best_metric_model_unet_bigger.pth"
 if os.path.exists(model_path):
     model.load_state_dict(torch.load(model_path))
     print(f"Wczytano wagi z pliku: {model_path} – kontynuacja treningu.")
@@ -252,7 +252,7 @@ for epoch in range(max_epochs):
             if metric > best_metric:
                 best_metric = metric
                 best_metric_epoch = epoch + 1
-                torch.save(model.state_dict(), "best_metric_model_unet_bigger.pth")
+                torch.save(model.state_dict(), "../trained_models/best_metric_model_unet_bigger.pth")
                 print("Zapisano nowy najlepszy model.")
                 
             print(

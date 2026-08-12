@@ -32,7 +32,7 @@ from monai.inferers import sliding_window_inference
 # ==========================================
 # 1. KONFIGURACJA
 # ==========================================
-MODEL_PATH = "../models/best_metric_model.pth"
+MODEL_PATH = "../trained_models/best_metric_model.pth"
 BASE_DIR = "../data/SELMA3D2026_training_annotated"
 CROP_SIZE = 96
 NUM_SAMPLES_PER_CLASS = 2
