@@ -1,0 +1,33 @@
+services:
+  monai-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: selma3d-monai:latest
+    container_name: selma3d_container
+
+    # Expands shared memory space.
+    runtime: nvidia
+    ipc: host
+
+    # Environment variables inside container
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - CUDA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    # Request NVIDIA GPU resources
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+
+    # Persistent Storage (Volume Mounts)
+    # Maps local folder paths on host (left) to container paths (right)
+    volumes:
+      - ./data:/app/data                # Mount local data directory
+      - ./checkpoints:/app/checkpoints  # Keep saved model weights on your machine
