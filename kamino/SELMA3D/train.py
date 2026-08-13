@@ -1,263 +1,136 @@
 import os
-import glob
+import logging
 import torch
-from monai.data import DataLoader, CacheDataset
-from monai.networks.layers import Norm
-from monai.networks.nets import UNet
-from monai.transforms import (
-    Compose,
-    LoadImaged,
-    EnsureChannelFirstd,
-    Spacingd,
-    CropForegroundd,
-    RandCropByPosNegLabeld,
-    RandFlipd,
-    NormalizeIntensityd,
-    ToTensord,
-    MapTransform,
-    SpatialPadd,
-    RandGaussianNoised,
-    RandAdjustContrastd,
-    RandRotated, RandZoomd, Rand3DElasticd
-)
-from monai.data import ITKReader
-from monai.losses import DiceCELoss
-from monai.metrics import DiceMetric
-from monai.transforms import AsDiscrete
+from monai.bundle import ConfigParser
 from monai.inferers import sliding_window_inference
-import random
 
-CROP_SIZE = 128
+def setup_logger(log_file: str):
+    """Configures logging to output to both console and a specified log file."""
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()
+        ],
+        force=True
+    )
 
-# Niestandardowa transformacja do mapowania binarnej maski na odpowiednią klasę
-class ConvertToMultiClassd(MapTransform):
-    def __init__(self, keys, class_key="class_id", allow_missing_keys=False):
-        super().__init__(keys, allow_missing_keys)
-        self.class_key = class_key
+def main():
+    # 1. Parse configuration
+    parser = ConfigParser()
+    parser.read_config("config.yaml")
 
-    def __call__(self, data):
-        d = dict(data)
-        class_id = d[self.class_key]
-        for key in self.keys:
-            d[key] = d[key] * class_id
-        return d
+    crop_size = parser.get("crop_size")
+    epochs = parser.get("epochs")
+    val_interval = parser.get("val_interval")
+    model_path = parser.get("model_path")
+    log_file = parser.get("log_path", default="./trained_models/train.log")
 
-# 1. Konfiguracja ścieżek i przypisanie identyfikatorów klas
-base_dir = "./data/SELMA3D2026_training_annotated"
-categories = {
-    "contiguous_structures": 1,
-    "isolated_structures": 2
-}
+    # 2. Initialize Logger
+    setup_logger(log_file)
+    logging.info("=" * 40)
+    logging.info(f"Starting execution | Log file: {log_file}")
 
-data_dicts = []
-for category, class_id in categories.items():
-    raw_dir = os.path.join(base_dir, category, "raw")
-    gt_dir = os.path.join(base_dir, category, "gt")
-    
-    raw_files = sorted(glob.glob(os.path.join(raw_dir, "*.mha")))
-    gt_files = sorted(glob.glob(os.path.join(gt_dir, "*.mha")))
-    
-    for raw, gt in zip(raw_files, gt_files):
-        data_dicts.append({"image": raw, "label": gt, "class_id": class_id})
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    logging.info(f"Using compute device: {device}")
 
-random.seed(76)
-random.shuffle(data_dicts)
+    # 3. Instantiate objects via ConfigParser
+    model = parser.get_parsed_content("model").to(device)
+    train_loader = parser.get_parsed_content("train_loader")
+    val_loader = parser.get_parsed_content("val_loader")
+    optimizer = parser.get_parsed_content("optimizer")
+    loss_function = parser.get_parsed_content("loss_function")
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=3, factor=0.5)
 
+    # 4. Resume Checkpoint handling
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    if os.path.exists(model_path):
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        logging.info(f"Loaded existing model weights from: {model_path}")
+    else:
+        logging.info("No saved checkpoint found. Starting training from scratch.")
 
-val_percent = 0.20
-val_size = int(len(data_dicts) * val_percent)
+    scaler = torch.amp.GradScaler('cuda') if device.type == "cuda" else None
+    best_val_loss = float("inf")
 
-val_files = data_dicts[:val_size]
-train_files = data_dicts[val_size:]
+    # 5. Training & Validation Loop
+    for epoch in range(epochs):
+        logging.info(f"--- Epoch [{epoch + 1}/{epochs}] ---")
+        model.train()
+        train_loss = 0.0
+        steps = 0
 
-# 2. Definicja transformacji z dodanymi augmentacjami (szum i kontrast)
-train_transforms = Compose(
-    [
-        LoadImaged(keys=["image", "label"], reader=ITKReader),
-        EnsureChannelFirstd(keys=["image", "label"]),
-        ConvertToMultiClassd(keys=["label"], class_key="class_id"),
-        Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
-        CropForegroundd(keys=["image", "label"], source_key="image"),
-        
-        SpatialPadd(keys=["image", "label"], spatial_size=(CROP_SIZE, CROP_SIZE, CROP_SIZE)),
-        
-        RandCropByPosNegLabeld(
-            keys=["image", "label"],
-            label_key="label",
-            spatial_size=(CROP_SIZE, CROP_SIZE, CROP_SIZE),
-            pos=1,
-            neg=1,
-            num_samples=2,
-            image_key="image",
-            image_threshold=0,
-        ),
-        RandFlipd(keys=["image", "label"], spatial_axis=[0], prob=0.5),
-        RandFlipd(keys=["image", "label"], spatial_axis=[1], prob=0.5),
-        RandFlipd(keys=["image", "label"], spatial_axis=[2], prob=0.5),
+        for batch in train_loader:
+            steps += 1
+            inputs = batch["image"].to(device)
+            targets = batch["label"].to(device)
 
-        RandRotated(
-            keys=["image", "label"],
-            range_x=0.3,
-            range_y=0.3,
-            range_z=0.3,
-            prob=0.3,
-            mode=("bilinear", "nearest"),
-        ),
-        
-        RandZoomd(
-            keys=["image", "label"],
-            min_zoom=0.8,
-            max_zoom=1.2,
-            prob=0.3,
-            mode=("bilinear", "nearest"),
-        ),
-        
-        Rand3DElasticd(
-            keys=["image", "label"],
-            sigma_range=(5, 7),
-            magnitude_range=(50, 150),
-            prob=0.2,
-            mode=("bilinear", "nearest"),
-        ),
-        
-        # Nowe augmentacje odpornościowe (szum i zmiany kontrastu)
-        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-        RandGaussianNoised(keys="image", prob=0.15, mean=0.0, std=0.1),
-        RandAdjustContrastd(keys="image", prob=0.15, gamma=(0.5, 2.0)),
-    ]
-)
+            optimizer.zero_grad()
 
-val_transforms = Compose(
-    [
-        LoadImaged(keys=["image", "label"], reader=ITKReader),
-        EnsureChannelFirstd(keys=["image", "label"]),
-        ConvertToMultiClassd(keys=["label"], class_key="class_id"),
-        Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
-        
-        SpatialPadd(keys=["image", "label"], spatial_size=(CROP_SIZE, CROP_SIZE, CROP_SIZE)),
-        
-        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-    ]
-)
-# 3. Zbiory danych i DataLoadery
-train_ds = CacheDataset(data=train_files, transform=train_transforms, cache_rate=1.0)
-train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4)
+            if scaler:
+                with torch.amp.autocast('cuda'):
+                    outputs = model(inputs)
+                    loss = loss_function(outputs, targets)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                outputs = model(inputs)
+                loss = loss_function(outputs, targets)
+                loss.backward()
+                optimizer.step()
 
-val_ds = CacheDataset(data=val_files, transform=val_transforms, cache_rate=1.0)
-val_loader = DataLoader(val_ds, batch_size=2, num_workers=4)
+            train_loss += loss.item()
 
-# 4. Definicja modelu
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-'''
-model = UNet(
-    spatial_dims=3,
-    in_channels=1,
-    out_channels=3,
-    channels=(16, 32, 64, 128, 256),
-    strides=(2, 2, 2, 2),
-    num_res_units=2,
-    norm=Norm.INSTANCE,
-    dropout=0.2
-).to(device)
-'''
-model = UNet(
-    spatial_dims=3,
-    in_channels=1,
-    out_channels=3,
-    channels=(16, 32, 64, 128, 256, 512, 1024),
-    strides=(2, 2, 2, 2, 2, 2),
-    num_res_units=2,
-    norm=Norm.INSTANCE,
-    dropout=0.2
-).to(device)
+        avg_train_loss = train_loss / steps
+        logging.info(f"Train Loss: {avg_train_loss:.5f}")
 
-model_path = "./trained_models/unet_kamino_1.pth"
-if os.path.exists(model_path):
-    model.load_state_dict(torch.load(model_path))
-    print(f"Wczytano wagi z pliku: {model_path} – kontynuacja treningu.")
-else:
-    print("Brak pliku wag. Rozpoczęcie treningu od zera.")
-print(f"Model załadowany. Urządzenie: {device}")
+        # Validation Step
+        if (epoch + 1) % val_interval == 0:
+            model.eval()
+            val_loss = 0.0
+            val_steps = 0
 
-# 5. Konfiguracja parametrów treningu, optymalizatora i schedulera
-max_epochs = 1000
-val_interval = 25
-best_metric = -1
-best_metric_epoch = -1
-epoch_loss_values = []
-metric_values = []
+            with torch.no_grad():
+                for val_batch in val_loader:
+                    val_steps += 1
+                    val_inputs = val_batch["image"].to(device)
+                    val_targets = val_batch["label"].to(device)
 
-loss_function = DiceCELoss(to_onehot_y=True, softmax=True, include_background=False)
-optimizer = torch.optim.Adam(model.parameters(), 1e-4)
+                    if scaler:
+                        with torch.amp.autocast('cuda'):
+                            val_outputs = sliding_window_inference(
+                                val_inputs,
+                                roi_size=(crop_size, crop_size, crop_size),
+                                sw_batch_size=4,
+                                predictor=model
+                            )
+                            v_loss = loss_function(val_outputs, val_targets)
+                    else:
+                        val_outputs = sliding_window_inference(
+                            val_inputs,
+                            roi_size=(crop_size, crop_size, crop_size),
+                            sw_batch_size=4,
+                            predictor=model
+                        )
+                        v_loss = loss_function(val_outputs, val_targets)
 
-# Scheduler: redukuje współczynnik uczenia o połowę, jeśli metryka nie poprawi się przez 10 walidacji
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, mode="max", patience=2, factor=0.5
-)
+                    val_loss += v_loss.item()
 
-dice_metric = DiceMetric(include_background=False, reduction="mean")
+            avg_val_loss = val_loss / val_steps
+            scheduler.step(avg_val_loss)
 
-post_pred = AsDiscrete(argmax=True, to_onehot=3)
-post_label = AsDiscrete(to_onehot=3)
+            logging.info(f"Val Loss: {avg_val_loss:.5f} (Best: {best_val_loss:.5f})")
 
-print("Rozpoczęcie treningu na urządzeniu:", device)
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                torch.save(model.state_dict(), model_path)
+                logging.info(f"  -> Saved new best checkpoint to {model_path}")
 
-# 6. Pętla ucząca
-for epoch in range(max_epochs):
-    print("-" * 10)
-    print(f"Epoka {epoch + 1}/{max_epochs}")
-    model.train()
-    epoch_loss = 0
-    step = 0
-    
-    for batch_data in train_loader:
-        step += 1
-        inputs, labels = batch_data["image"].to(device), batch_data["label"].to(device)
-        
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = loss_function(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        
-        epoch_loss += loss.item()
-        #print(f"{step}/{len(train_loader)}, strata treningowa: {loss.item():.4f}")
-        
-    epoch_loss /= step
-    epoch_loss_values.append(epoch_loss)
-    print(f"Średnia strata z epoki: {epoch_loss:.4f}")
+    logging.info("=" * 40)
+    logging.info(f"Training completed. Best Validation Loss: {best_val_loss:.5f}")
 
-    # 7. Walidacja
-    if (epoch + 1) % val_interval == 0:
-        model.eval()
-        with torch.no_grad():
-            for val_data in val_loader:
-                val_inputs, val_labels = val_data["image"].to(device), val_data["label"].to(device)
-                
-                roi_size = (CROP_SIZE, CROP_SIZE, CROP_SIZE)
-                sw_batch_size = 4
-                val_outputs = sliding_window_inference(val_inputs, roi_size, sw_batch_size, model)
-                
-                val_outputs = [post_pred(i) for i in val_outputs]
-                val_labels = [post_label(i) for i in val_labels]
-                dice_metric(y_pred=val_outputs, y=val_labels)
-                
-            metric = dice_metric.aggregate().item()
-            dice_metric.reset()
-            metric_values.append(metric)
-            
-            # Aktualizacja schedulera na podstawie metryki walidacyjnej
-            scheduler.step(metric)
-            
-            if metric > best_metric:
-                best_metric = metric
-                best_metric_epoch = epoch + 1
-                torch.save(model.state_dict(), "./trained_models/unet_kamino_1.pth")
-                print("Zapisano nowy najlepszy model.")
-                
-            print(
-                f"Obecna metryka (Mean Dice): {metric:.4f} "
-                f"Najlepsza metryka: {best_metric:.4f} w epoce: {best_metric_epoch}"
-            )
-
-print(f"Zakończono trening. Najlepsza metryka: {best_metric:.4f} w epoce {best_metric_epoch}")
+if __name__ == "__main__":
+    main()

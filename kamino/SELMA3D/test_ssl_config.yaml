@@ -1,0 +1,54 @@
+base_dir: "./SELMA3D2026_training_annotated"
+crop_size: 128
+batch_size: 2
+epochs: 100
+val_interval: 5
+lr: 0.0001
+model_path: "./trained_models/best_ssl_segresnet.pth"
+log_path: "./logs/ssl_segresnet.txt"
+
+model:
+  _target_: models.get_segresnet_ssl
+  init_filters: 16
+
+data_split:
+  _target_: helpers.get_ssl_file_dicts
+  base_dir: "@base_dir"
+  val_percent: 0.20
+
+train_transforms:
+  _target_: helpers.get_ssl_transforms
+  crop_size: "@crop_size"
+  hole_size: 32
+  is_train: true
+
+val_transforms:
+  _target_: helpers.get_ssl_transforms
+  crop_size: "@crop_size"
+  hole_size: 32
+  is_train: false
+
+train_loader:
+  _target_: helpers.get_dataloader
+  data_list: "$@data_split[0]"
+  transforms: "@train_transforms"
+  batch_size: "@batch_size"
+  num_workers: 8
+  shuffle: true
+
+val_loader:
+  _target_: helpers.get_dataloader
+  data_list: "$@data_split[1]"
+  transforms: "@val_transforms"
+  batch_size: 1
+  num_workers: 4
+  shuffle: false
+
+loss_function:
+  _target_: torch.nn.L1Loss
+
+optimizer:
+  _target_: torch.optim.AdamW
+  params: "$@model.parameters()"
+  lr: "@lr"
+  weight_decay: 1e-5
