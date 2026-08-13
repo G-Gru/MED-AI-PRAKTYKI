@@ -1,0 +1,7 @@
+  GNU nano 7.2                                         Dockerfile
+FROM projectmonai/monai:latest
+
+RUN pip install --no-cache-dir SimpleITK
+
+WORKDIR /workspace
+

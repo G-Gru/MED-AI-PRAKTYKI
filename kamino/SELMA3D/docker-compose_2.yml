@@ -1,0 +1,18 @@
+services:
+  monai_trainer:
+    build: .
+    image: selma3d_monai_env
+    container_name: selma3d_container_ps
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - .:/workspace
+      - ./data/SELMA3D2026_training_annotated:/workspace/SELMA3D2026_training_annotated
+      - ./trained_models:/workspace/trained_models
+    command: tail -f /dev/null
