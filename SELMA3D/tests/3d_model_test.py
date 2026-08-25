@@ -22,7 +22,7 @@ from monai.inferers import sliding_window_inference
 # 1. KONFIGURACJA
 # ==========================================
 MODEL_PATH = "../trained_models/best_metric_model.pth"
-HARDCODED_IMAGE_PATH = "../data/SELMA3D2026_training_annotated/contiguous_structures/raw/blood_vessel_patchvolume_005.mha"
+HARDCODED_IMAGE_PATH = "../data/SELMA3D2026_training_annotated/isolated_structures/raw/cfos_neuron_patchvolume_695.mha"
 OUTPUT_DIR = "../results"
 CROP_SIZE = 96
 
@@ -101,10 +101,23 @@ num_slices, height, width = raw_np.shape
 print(f"Tworzenie stosu Z-stack ImageJ dla ACTO3D w folderze '{OUTPUT_DIR}'...")
 
 base_name = os.path.splitext(os.path.basename(HARDCODED_IMAGE_PATH))[0]
+second_last_dir = os.path.basename(os.path.dirname(os.path.dirname(HARDCODED_IMAGE_PATH)))
 out_filepath = os.path.join(OUTPUT_DIR, f"{base_name}_stack.tif")
 
-# Inicjalizacja macierzy: (Głębokość Z, 3 Kanały, Wysokość, Szerokość)
-stack = np.zeros((num_slices, 3, height, width), dtype=np.uint8)
+# Load ground truth mask
+gt_path = f"../data/SELMA3D2026_training_annotated/{second_last_dir}/gt/{base_name}.mha"
+
+# Load ground truth mask
+gt_transform = Compose([
+    LoadImaged(keys=["gt"], reader=ITKReader),
+    EnsureChannelFirstd(keys=["gt"]),
+])
+
+gt_data = gt_transform({"gt": gt_path})
+gt_mask = gt_data["gt"].squeeze().numpy().transpose(2, 1, 0)
+gt_mask = (gt_mask * 255).astype(np.uint8)
+
+stack = np.zeros((num_slices, 4, height, width), dtype=np.uint8)
 
 # Kanał 0: Oryginalny Skan
 stack[:, 0, :, :] = raw_np
@@ -112,6 +125,8 @@ stack[:, 0, :, :] = raw_np
 stack[:, 1, :, :] = (pred_np == 1).astype(np.uint8) * 255
 # Kanał 2: Maska kategorii 2
 stack[:, 2, :, :] = (pred_np == 2).astype(np.uint8) * 255
+# Kanał 3: Ground Truth Mask
+stack[:, 3, :, :] = gt_mask
 
 # Zapis przy użyciu standardu ImageJ
 tifffile.imwrite(
@@ -123,7 +138,7 @@ tifffile.imwrite(
         'spacing': 1.0,         # Dystans fizyczny między klatkami na osi Z (rozwiązuje błąd odczytu)
         'unit': 'mm',           # Fizyczna jednostka (wymagana przez czytnik metadanych)
         'axes': 'ZCYX',         # Oznaczenie wymiarów: Z-stack, Kanały, Y, X (rozwiązuje problem z czwartym kanałem)
-        'Labels': ['Original MRI', 'Mask Class 1', 'Mask Class 2'] # Tagi czytelne w Acto3D / Fiji
+        'Labels': ['Original MRI', 'Mask Class 1', 'Mask Class 2', 'Ground Truth'] # Tagi czytelne w Acto3D / Fiji
     }
 )
 

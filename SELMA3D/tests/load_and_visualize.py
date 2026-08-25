@@ -10,10 +10,11 @@ import SimpleITK as sitk
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
-file = "cfos_neuron_patchvolume_695.mha"
+file = "peripheral_nerve_patchvolume_158.mha"
+type_of_tissue = "contiguous"
 
-raw_path = "../data/SELMA3D2026_training_annotated/isolated_structures/raw/" + file
-gt_path = "../data/SELMA3D2026_training_annotated/isolated_structures/gt/" + file
+raw_path = f"../data/SELMA3D2026_training_annotated/{type_of_tissue}_structures/raw/" + file
+gt_path = f"../data/SELMA3D2026_training_annotated/{type_of_tissue}_structures/gt/" + file
 
 raw_image = sitk.ReadImage(raw_path)
 gt_image = sitk.ReadImage(gt_path)
