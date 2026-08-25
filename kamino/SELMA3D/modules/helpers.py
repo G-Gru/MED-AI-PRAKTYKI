@@ -1,7 +1,7 @@
 import os
 import glob
 import random
-from monai.data import DataLoader, CacheDataset, ITKReader
+from monai.data import DataLoader, CacheDataset, ITKReader, Dataset
 from monai.transforms import (
     Compose, LoadImaged, EnsureChannelFirstd, Spacingd, CropForegroundd,
     RandCropByPosNegLabeld, RandFlipd, NormalizeIntensityd, MapTransform,
@@ -46,11 +46,13 @@ def get_supervised_file_dicts(base_dir, val_percent=0.20, seed=42):
 
 
 def get_ssl_file_dicts(base_dir, val_percent=0.20, seed=42):
-    raw_files = sorted(glob.glob(os.path.join(base_dir, "**", "raw", "*.mha"), recursive=True))
-    if not raw_files:
-        raw_files = sorted(glob.glob(os.path.join(base_dir, "*.mha")))
+    nii_files = sorted(glob.glob(os.path.join(base_dir, "**", "*.nii.gz"), recursive=True))
+    nii_files = [f for f in nii_files if os.path.isfile(f)]
+    if not nii_files:
+        raise ValueError(f"No .nii.gz files found in base_dir: {base_dir}")
 
-    data_dicts = [{"image": f} for f in raw_files]
+    data_dicts = [{"image": f} for f in nii_files]
+
     random.seed(seed)
     random.shuffle(data_dicts)
 
@@ -90,11 +92,12 @@ def get_supervised_transforms(crop_size=128, is_train=True):
     return Compose(transforms)
 
 
-def get_ssl_transforms(crop_size=128, hole_size=32, is_train=True):
+def get_ssl_transforms(crop_size=128, hole_size=32, is_train=True, resize = False):
+    target_pixdim = (2.0, 2.0, 2.0) if resize else (1.0, 1.0, 1.0)
     transforms = [
         LoadImaged(keys=["image"], reader=ITKReader),
         EnsureChannelFirstd(keys=["image"]),
-        Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode="bilinear"),
+        Spacingd(keys=["image"], pixdim=target_pixdim, mode="bilinear"),
         ScaleIntensityRangePercentilesd(
             keys=["image"], lower=0.5, upper=99.5, b_min=0.0, b_max=1.0, clip=True, relative=False
         ),
@@ -112,12 +115,15 @@ def get_ssl_transforms(crop_size=128, hole_size=32, is_train=True):
         ])
 
     transforms.append(CopyItemsd(keys=["image"], times=1, names=["label"]))
-    transforms.append(RandCoarseDropoutd(keys=["image"], holes=4, spatial_size=hole_size, fill_value=0.0, prob=1.0))
+    #transforms.append(RandCoarseDropoutd(keys=["image"], holes=4, spatial_size=hole_size, fill_value=0.0, prob=1.0))
 
     return Compose(transforms)
 
 
 # DATALOADER
-def get_dataloader(data_list, transforms, batch_size, num_workers=4, shuffle=True):
-    ds = CacheDataset(data=data_list, transform=transforms, cache_rate=1.0)
+def get_dataloader(data_list, transforms, batch_size, num_workers=4, shuffle=True, to_ram=True):
+    if to_ram:
+        ds = CacheDataset(data=data_list, transform=transforms, cache_rate=1.0)
+    else:
+        ds = Dataset(data=data_list, transform=transforms)
     return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)

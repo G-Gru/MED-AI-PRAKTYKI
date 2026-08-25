@@ -51,4 +51,4 @@ optimizer:
   _target_: torch.optim.AdamW
   params: "$@model.parameters()"
   lr: "@lr"
-  weight_decay: 1e-5
+  weight_decay: 0.00001

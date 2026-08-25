@@ -1,4 +1,4 @@
-from monai.networks.nets import SegResNet, UNet, BasicUNet
+from monai.networks.nets import SegResNet, UNet, BasicUNet, AutoEncoder
 from monai.networks.layers import Norm
 
 def get_segresnet(init_filters=16):
@@ -55,4 +55,13 @@ def get_basicunet_ssl(features):
         in_channels=1,
         out_channels=1,
         features=(32, 32, 64, 128, 256, 32)
+    )
+
+def get_autoencoder_ssl(features=(16, 32, 64, 128)):
+    return AutoEncoder(
+        spatial_dims=3,
+        in_channels=1,
+        out_channels=1,
+        channels=features,
+        strides=(1, 2, 2, 2),
     )
