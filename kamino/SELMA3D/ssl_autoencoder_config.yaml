@@ -1,40 +1,43 @@
-base_dir: "./SELMA3D2026_training_annotated"
+base_dir: "../data/SELMA3D2026_cropped_patches"
 crop_size: 128
-batch_size: 2
+batch_size: 8
 epochs: 100
-val_interval: 5
+val_interval: 2
 lr: 0.0001
-model_path: "./trained_models/best_ssl_segresnet.pth"
-log_path: "./logs/ssl_segresnet.txt"
+model_path: "./trained_models/best_ssl_autoencoder.pth"
+log_path: "./logs/ssl_autoencoder.txt"
 
 model:
-  _target_: models.get_segresnet_ssl
-  init_filters: 16
+  _target_: models.get_autoencoder_ssl
+  features: [16, 32, 64, 128]
 
 data_split:
   _target_: helpers.get_ssl_file_dicts
   base_dir: "@base_dir"
-  val_percent: 0.20
+  val_percent: 0.10
 
 train_transforms:
   _target_: helpers.get_ssl_transforms
   crop_size: "@crop_size"
   hole_size: 32
   is_train: true
+  resize: true
 
 val_transforms:
   _target_: helpers.get_ssl_transforms
   crop_size: "@crop_size"
   hole_size: 32
   is_train: false
+  resize: true
 
 train_loader:
   _target_: helpers.get_dataloader
   data_list: "$@data_split[0]"
   transforms: "@train_transforms"
   batch_size: "@batch_size"
-  num_workers: 8
+  num_workers: 4
   shuffle: true
+  to_ram: false
 
 val_loader:
   _target_: helpers.get_dataloader
@@ -43,6 +46,7 @@ val_loader:
   batch_size: 1
   num_workers: 4
   shuffle: false
+  to_ram: false
 
 loss_function:
   _target_: torch.nn.L1Loss
@@ -52,7 +56,7 @@ scheduler:
   type: ReduceLROnPlateau
   params:
     mode: min
-    patience: 3
+    patience: 2
     factor: 0.5
 
 optimizer:

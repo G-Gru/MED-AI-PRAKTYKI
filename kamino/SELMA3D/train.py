@@ -3,6 +3,7 @@ import logging
 import torch
 from monai.bundle import ConfigParser
 from monai.inferers import sliding_window_inference
+import argparse
 
 def setup_logger(log_file: str):
     """Configures logging to output to both console and a specified log file."""
@@ -17,16 +18,17 @@ def setup_logger(log_file: str):
         force=True
     )
 
-def main():
+def main(config_file):
     # 1. Parse configuration
     parser = ConfigParser()
-    parser.read_config("config.yaml")
+    parser.read_config(config_file)
 
     crop_size = parser.get("crop_size")
     epochs = parser.get("epochs")
     val_interval = parser.get("val_interval")
     model_path = parser.get("model_path")
     log_file = parser.get("log_path", default="./trained_models/train.log")
+    scheduler_config = parser.get("scheduler", default={"type": "ReduceLROnPlateau", "params": {"mode": "min", "patience": 3, "factor": 0.5}})
 
     # 2. Initialize Logger
     setup_logger(log_file)
@@ -42,7 +44,8 @@ def main():
     val_loader = parser.get_parsed_content("val_loader")
     optimizer = parser.get_parsed_content("optimizer")
     loss_function = parser.get_parsed_content("loss_function")
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", patience=3, factor=0.5)
+    scheduler_class = getattr(torch.optim.lr_scheduler, scheduler_config["type"])
+    scheduler = scheduler_class(optimizer, **scheduler_config["params"])
 
     # 4. Resume Checkpoint handling
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
@@ -50,6 +53,8 @@ def main():
         model.load_state_dict(torch.load(model_path, map_location=device))
         logging.info(f"Loaded existing model weights from: {model_path}")
     else:
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        open(log_file, 'w').close()
         logging.info("No saved checkpoint found. Starting training from scratch.")
 
     scaler = torch.amp.GradScaler('cuda') if device.type == "cuda" else None
@@ -133,4 +138,7 @@ def main():
     logging.info(f"Training completed. Best Validation Loss: {best_val_loss:.5f}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Train a 3D model with MONAI.")
+    parser.add_argument("config", type=str, help="Path to the configuration file.")
+    args = parser.parse_args()
+    main(args.config)
