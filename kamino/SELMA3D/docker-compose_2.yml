@@ -3,7 +3,10 @@ services:
     build: .
     image: selma3d_monai_env
     container_name: selma3d_container_ps
-    ipc: host
+    shm_size: "8gb"
+    environment:
+      - UCX_TLS=shm,self
+      - UCX_ACC_DEVICES=
     deploy:
       resources:
         reservations:
