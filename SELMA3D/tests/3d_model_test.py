@@ -22,7 +22,7 @@ from monai.inferers import sliding_window_inference
 # 1. KONFIGURACJA
 # ==========================================
 MODEL_PATH = "../trained_models/best_metric_model.pth"
-HARDCODED_IMAGE_PATH = "../data/SELMA3D2026_training_annotated/isolated_structures/raw/cfos_neuron_patchvolume_695.mha"
+HARDCODED_IMAGE_PATH = "../data/SELMA3D2026_training_annotated/contiguous_structures/raw/blood_vessel_patchvolume_005.mha"
 OUTPUT_DIR = "../results"
 CROP_SIZE = 96
 
@@ -126,7 +126,16 @@ stack[:, 1, :, :] = (pred_np == 1).astype(np.uint8) * 255
 # Kanał 2: Maska kategorii 2
 stack[:, 2, :, :] = (pred_np == 2).astype(np.uint8) * 255
 # Kanał 3: Ground Truth Mask
-stack[:, 3, :, :] = gt_mask
+pad_diff = np.array(raw_np.shape) - np.array(gt_mask.shape)
+pad_width = [
+    (pad_diff[0] // 2, pad_diff[0] - pad_diff[0] // 2),  # Z-dimension
+    (pad_diff[1] // 2, pad_diff[1] - pad_diff[1] // 2),  # Y-dimension
+    (pad_diff[2] // 2, pad_diff[2] - pad_diff[2] // 2),  # X-dimension
+]
+
+gt_mask = np.pad(gt_mask, pad_width, mode='constant', constant_values=0)
+
+stack[:, 3, :, :] = gt_mask[:stack.shape[0], :, :]
 
 # Zapis przy użyciu standardu ImageJ
 tifffile.imwrite(

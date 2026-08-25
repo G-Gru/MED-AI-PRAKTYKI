@@ -10,7 +10,7 @@ import SimpleITK as sitk
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
-file = "peripheral_nerve_patchvolume_158.mha"
+file = "blood_vessel_patchvolume_005.mha"
 type_of_tissue = "contiguous"
 
 raw_path = f"../data/SELMA3D2026_training_annotated/{type_of_tissue}_structures/raw/" + file
