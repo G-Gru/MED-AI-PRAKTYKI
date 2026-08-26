@@ -5,6 +5,9 @@ from monai.bundle import ConfigParser
 from monai.inferers import sliding_window_inference
 import argparse
 
+from pygments.lexer import default
+
+
 def setup_logger(log_file: str):
     """Configures logging to output to both console and a specified log file."""
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -27,6 +30,7 @@ def main(config_file):
     epochs = parser.get("epochs")
     val_interval = parser.get("val_interval")
     model_path = parser.get("model_path")
+    new_model_path = parser.get("new_model_path", default=model_path)
     log_file = parser.get("log_path", default="./trained_models/train.log")
     scheduler_config = parser.get("scheduler", default={"type": "ReduceLROnPlateau", "params": {"mode": "min", "patience": 3, "factor": 0.5}})
 
@@ -50,12 +54,15 @@ def main(config_file):
     # 4. Resume Checkpoint handling
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     if os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.load_state_dict(torch.load(model_path, map_location=device), strict=False)
         logging.info(f"Loaded existing model weights from: {model_path}")
     else:
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
         open(log_file, 'w').close()
         logging.info("No saved checkpoint found. Starting training from scratch.")
+
+    if new_model_path != model_path:
+        os.makedirs(os.path.dirname(new_model_path), exist_ok=True)
 
     scaler = torch.amp.GradScaler('cuda') if device.type == "cuda" else None
     best_val_loss = float("inf")
@@ -131,8 +138,8 @@ def main(config_file):
 
             if avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
-                torch.save(model.state_dict(), model_path)
-                logging.info(f"  -> Saved new best checkpoint to {model_path}")
+                torch.save(model.state_dict(), new_model_path)
+                logging.info(f"  -> Saved new best checkpoint to {new_model_path}")
 
     logging.info("=" * 40)
     logging.info(f"Training completed. Best Validation Loss: {best_val_loss:.5f}")
