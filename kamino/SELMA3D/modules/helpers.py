@@ -128,23 +128,8 @@ def get_dataloader(data_list, transforms, batch_size, num_workers=4, shuffle=Tru
     else:
         ds = Dataset(data=data_list, transform=transforms)
 
-    class SafeDataset:
-        def __init__(self, dataset):
-            self.dataset = dataset
-
-        def __len__(self):
-            return len(self.dataset)
-
-        def __getitem__(self, idx):
-            try:
-                return self.dataset[idx]
-            except Exception as e:
-                print(f"Error loading data at index {idx}: {e}")
-                return None  # Return None for corrupt data
-
-    safe_ds = SafeDataset(ds)
     return DataLoader(
-        filter(lambda x: x is not None, safe_ds),  # Filter out None values
+        ds,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers

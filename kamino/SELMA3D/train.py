@@ -48,6 +48,7 @@ def main(config_file):
     val_loader = parser.get_parsed_content("val_loader")
     optimizer = parser.get_parsed_content("optimizer")
     loss_function = parser.get_parsed_content("loss_function")
+    metric = parser.get_parsed_content("metric", default=None)
     scheduler_class = getattr(torch.optim.lr_scheduler, scheduler_config["type"])
     scheduler = scheduler_class(optimizer, **scheduler_config["params"])
 
@@ -104,6 +105,7 @@ def main(config_file):
             model.eval()
             val_loss = 0.0
             val_steps = 0
+            metric_score = 0.0
 
             with torch.no_grad():
                 for val_batch in val_loader:
@@ -119,7 +121,6 @@ def main(config_file):
                                 sw_batch_size=4,
                                 predictor=model
                             )
-                            v_loss = loss_function(val_outputs, val_targets)
                     else:
                         val_outputs = sliding_window_inference(
                             val_inputs,
@@ -127,17 +128,28 @@ def main(config_file):
                             sw_batch_size=4,
                             predictor=model
                         )
+
+                    if metric:
+                        metric_score += metric(val_outputs, val_targets).item()
+                    else:
                         v_loss = loss_function(val_outputs, val_targets)
+                        val_loss += v_loss.item()
 
-                    val_loss += v_loss.item()
+            if metric:
+                avg_metric_score = metric_score / val_steps
+                scheduler.step(avg_metric_score)
+                logging.info(f"Metric Score: {avg_metric_score:.5f}")
+            else:
+                avg_val_loss = val_loss / val_steps
+                scheduler.step(avg_val_loss)
+                logging.info(f"Val Loss: {avg_val_loss:.5f} (Best: {best_val_loss:.5f})")
 
-            avg_val_loss = val_loss / val_steps
-            scheduler.step(avg_val_loss)
-
-            logging.info(f"Val Loss: {avg_val_loss:.5f} (Best: {best_val_loss:.5f})")
-
-            if avg_val_loss < best_val_loss:
+            if not metric and avg_val_loss < best_val_loss:
                 best_val_loss = avg_val_loss
+                torch.save(model.state_dict(), new_model_path)
+                logging.info(f"  -> Saved new best checkpoint to {new_model_path}")
+            elif metric and avg_metric_score > best_val_loss:
+                best_val_loss = avg_metric_score
                 torch.save(model.state_dict(), new_model_path)
                 logging.info(f"  -> Saved new best checkpoint to {new_model_path}")
 

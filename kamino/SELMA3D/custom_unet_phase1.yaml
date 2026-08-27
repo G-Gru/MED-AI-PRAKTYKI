@@ -1,7 +1,7 @@
 base_dir: "../data/SELMA3D2026_cropped_patches"
 crop_size: 128
-batch_size: 8
-epochs: 100
+batch_size: 16
+epochs: 30
 val_interval: 2
 lr: 0.0001
 model_path: "./trained_models/best_custom_unet_phase1.pth"
@@ -39,7 +39,7 @@ train_loader:
   data_list: "$@data_split[0]"
   transforms: "@train_transforms"
   batch_size: "@batch_size"
-  num_workers: 4
+  num_workers: 2
   shuffle: true
   to_ram: false
 
@@ -48,12 +48,18 @@ val_loader:
   data_list: "$@data_split[1]"
   transforms: "@val_transforms"
   batch_size: 1
-  num_workers: 4
+  num_workers: 2
   shuffle: false
   to_ram: false
 
 loss_function:
   _target_: torch.nn.L1Loss
+
+metric:
+  _target_: monai.metrics.DiceMetric
+  include_background: true
+  reduction: mean
+  get_not_nans: false
 
 
 scheduler:
