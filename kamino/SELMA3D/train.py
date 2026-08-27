@@ -41,6 +41,8 @@ def main(config_file):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logging.info(f"Using compute device: {device}")
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
 
     # 3. Instantiate objects via ConfigParser
     model = parser.get_parsed_content("model").to(device)
@@ -77,8 +79,8 @@ def main(config_file):
 
         for batch in train_loader:
             steps += 1
-            inputs = batch["image"].to(device)
-            targets = batch["label"].to(device)
+            inputs = batch["image"].to(device, non_blocking=True)
+            targets = batch["label"].to(device, non_blocking=True)
 
             optimizer.zero_grad()
 
@@ -118,14 +120,14 @@ def main(config_file):
                             val_outputs = sliding_window_inference(
                                 val_inputs,
                                 roi_size=(crop_size, crop_size, crop_size),
-                                sw_batch_size=4,
+                                sw_batch_size=8,
                                 predictor=model
                             )
                     else:
                         val_outputs = sliding_window_inference(
                             val_inputs,
                             roi_size=(crop_size, crop_size, crop_size),
-                            sw_batch_size=4,
+                            sw_batch_size=8,
                             predictor=model
                         )
 

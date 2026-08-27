@@ -1,6 +1,6 @@
 base_dir: "../data/SELMA3D2026_training_annotated"
 crop_size: 128
-batch_size: 4
+batch_size: 8
 epochs: 300
 val_interval: 2
 lr: 0.0001
@@ -36,18 +36,18 @@ train_loader:
   data_list: "$@data_split[0]"
   transforms: "@train_transforms"
   batch_size: "@batch_size"
-  num_workers: 2
+  num_workers: 8
   shuffle: true
-  to_ram: false
+  to_ram: true
 
 val_loader:
   _target_: helpers.get_dataloader
   data_list: "$@data_split[1]"
   transforms: "@val_transforms"
   batch_size: 1
-  num_workers: 2
+  num_workers: 4
   shuffle: false
-  to_ram: false
+  to_ram: true
 
 loss_function:
   _target_: monai.losses.DiceCELoss

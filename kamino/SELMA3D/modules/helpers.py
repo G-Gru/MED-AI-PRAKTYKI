@@ -1,7 +1,7 @@
 import os
 import glob
 import random
-from monai.data import DataLoader, CacheDataset, ITKReader, Dataset
+from monai.data import DataLoader, CacheDataset, ITKReader, Dataset, PersistentDataset
 from monai.transforms import (
     Compose, LoadImaged, EnsureChannelFirstd, Spacingd, CropForegroundd,
     RandCropByPosNegLabeld, RandFlipd, NormalizeIntensityd, MapTransform,
@@ -133,4 +133,29 @@ def get_dataloader(data_list, transforms, batch_size, num_workers=4, shuffle=Tru
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers
+    )
+
+def get_fast_dataloader(
+    data_list,
+    transforms,
+    batch_size,
+    num_workers=8,
+    shuffle=True,
+    cache_dir="./cache",
+):
+    os.makedirs(cache_dir, exist_ok=True)
+
+    ds = PersistentDataset(
+        data=data_list, transform=transforms, cache_dir=cache_dir
+    )
+
+    return DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=(
+            num_workers > 0
+        ),
     )

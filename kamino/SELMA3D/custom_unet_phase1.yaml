@@ -1,6 +1,5 @@
 base_dir: "../data/SELMA3D2026_cropped_patches"
 crop_size: 128
-batch_size: 16
 epochs: 30
 val_interval: 2
 lr: 0.0001
@@ -35,22 +34,22 @@ val_transforms:
   hole_size: 32
 
 train_loader:
-  _target_: helpers.get_dataloader
+  _target_: helpers.get_fast_dataloader
   data_list: "$@data_split[0]"
   transforms: "@train_transforms"
-  batch_size: "@batch_size"
-  num_workers: 2
+  batch_size: 24
+  num_workers: 8
   shuffle: true
-  to_ram: false
+  cache_dir: "./persistent_cache/train"
 
 val_loader:
-  _target_: helpers.get_dataloader
+  _target_: helpers.get_fast_dataloader
   data_list: "$@data_split[1]"
   transforms: "@val_transforms"
   batch_size: 1
-  num_workers: 2
+  num_workers: 4
   shuffle: false
-  to_ram: false
+  cache_dir: "./persistent_cache/val"
 
 loss_function:
   _target_: torch.nn.L1Loss
