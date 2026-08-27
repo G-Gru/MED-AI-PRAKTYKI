@@ -61,12 +61,13 @@ def get_ssl_file_dicts(base_dir, val_percent=0.20, seed=42):
 
 
 # TRANSFORMS
-def get_supervised_transforms(crop_size=128, is_train=True):
+def get_supervised_transforms(crop_size=128, is_train=True, resize=False):
+    target_pixdim = (2.0, 2.0, 2.0) if resize else (1.0, 1.0, 1.0)
     transforms = [
         LoadImaged(keys=["image", "label"], reader=ITKReader),
         EnsureChannelFirstd(keys=["image", "label"]),
         ConvertToMultiClassd(keys=["label"], class_key="class_id"),
-        Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear", "nearest")),
+        Spacingd(keys=["image", "label"], pixdim=target_pixdim, mode=("bilinear", "nearest")),
         ScaleIntensityRangePercentilesd(
             keys=["image"], lower=0.5, upper=99.5, b_min=0.0, b_max=1.0, clip=True, relative=False
         ),
@@ -126,4 +127,10 @@ def get_dataloader(data_list, transforms, batch_size, num_workers=4, shuffle=Tru
         ds = CacheDataset(data=data_list, transform=transforms, cache_rate=1.0)
     else:
         ds = Dataset(data=data_list, transform=transforms)
-    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+
+    return DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers
+    )

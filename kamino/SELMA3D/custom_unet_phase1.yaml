@@ -1,0 +1,76 @@
+base_dir: "../data/SELMA3D2026_cropped_patches"
+crop_size: 128
+batch_size: 16
+epochs: 30
+val_interval: 2
+lr: 0.0001
+model_path: "./trained_models/best_custom_unet_phase1.pth"
+log_path: "./logs/custom_unet_phase1.txt"
+
+model:
+  _target_: models.get_custom_unet
+  features: [16, 32, 64, 128, 256]
+  phase2: false
+  out_channels: 1
+
+data_split:
+  _target_: helpers.get_ssl_file_dicts
+  base_dir: "@base_dir"
+  val_percent: 0.10
+
+train_transforms:
+  _target_: helpers.get_ssl_transforms
+  crop_size: "@crop_size"
+  is_train: true
+  resize: true
+  # unused
+  hole_size: 32
+
+val_transforms:
+  _target_: helpers.get_ssl_transforms
+  crop_size: "@crop_size"
+  is_train: false
+  resize: true
+  # unused
+  hole_size: 32
+
+train_loader:
+  _target_: helpers.get_dataloader
+  data_list: "$@data_split[0]"
+  transforms: "@train_transforms"
+  batch_size: "@batch_size"
+  num_workers: 2
+  shuffle: true
+  to_ram: false
+
+val_loader:
+  _target_: helpers.get_dataloader
+  data_list: "$@data_split[1]"
+  transforms: "@val_transforms"
+  batch_size: 1
+  num_workers: 2
+  shuffle: false
+  to_ram: false
+
+loss_function:
+  _target_: torch.nn.L1Loss
+
+metric:
+  _target_: monai.metrics.DiceMetric
+  include_background: true
+  reduction: mean
+  get_not_nans: false
+
+
+scheduler:
+  type: ReduceLROnPlateau
+  params:
+    mode: min
+    patience: 2
+    factor: 0.5
+
+optimizer:
+  _target_: torch.optim.AdamW
+  params: "$@model.parameters()"
+  lr: "@lr"
+  weight_decay: 0.00001
